@@ -1,0 +1,70 @@
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export let options = {
+  scenarios: {
+    constant_load: {
+      executor: 'constant-arrival-rate',
+      rate: 2,              // 2 iterations per second = ~120 per minute
+      timeUnit: '1s',       // 1 second
+      duration: '1m',       // Run for 1 minute
+      preAllocatedVUs: 5,   // Initial pool of VUs
+      maxVUs: 10,          // Maximum pool of VUs
+    },
+  },
+};
+
+const BASE_URL = 'http://bookapi.bookapi.svc.cluster.local';
+
+// Sample book data
+const testBook = {
+  title: 'Test Book',
+  author: 'Test Author',
+  year: 2025
+};
+
+export default function() {
+  // GET all books (40% of requests)
+  if (Math.random() < 0.4) {
+    const getAll = http.get(`${BASE_URL}/books`);
+    check(getAll, {
+      'get all books status is 200': (r) => r.status === 200,
+    });
+  }
+  
+  // POST new book (30% of requests)
+  else if (Math.random() < 0.7) {
+    const create = http.post(`${BASE_URL}/books`, JSON.stringify(testBook), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    check(create, {
+      'create book status is 201': (r) => r.status === 201,
+    });
+    
+    // If book was created successfully, try to get it
+    if (create.status === 201) {
+      const bookId = JSON.parse(create.body).id;
+      const getOne = http.get(`${BASE_URL}/books/${bookId}`);
+      check(getOne, {
+        'get single book status is 200': (r) => r.status === 200,
+      });
+    }
+  }
+  
+  // PUT update book (30% of requests)
+  else {
+    const updatedBook = {
+      ...testBook,
+      title: `Updated Book ${Date.now()}`
+    };
+    const update = http.put(`${BASE_URL}/books/1`, JSON.stringify(updatedBook), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    check(update, {
+      'update book status is 200': (r) => r.status === 200,
+    });
+  }
+  
+  // Small random delay (0-100ms) to prevent exact simultaneous requests
+  sleep(Math.random() * 0.1);
+}
