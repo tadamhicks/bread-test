@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k6-load-test
+spec:
+  schedule: "*/1 * * * *"  # Run every minute
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: k6
+            image: grafana/k6:latest
+            args:
+            - run
+            - /tests/test.js
+            volumeMounts:
+            - name: k6-test
+              mountPath: /tests
+          volumes:
+          - name: k6-test
+            configMap:
+              name: k6-test
+          restartPolicy: Never

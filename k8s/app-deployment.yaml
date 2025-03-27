@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bookapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bookapi
+  template:
+    metadata:
+      labels:
+        app: bookapi
+    spec:
+      containers:
+      - name: bookapi
+        image: tadamhicks/bookapi:1.0.0
+        ports:
+        - containerPort: 9292
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        env:
+        - name: DATABASE_URL
+          value: "postgres://postgres:postgres@postgres:5432/bookdb?sslmode=disable"
+        - name: DD_AGENT_HOST
+          value: "otel-collector"
+        - name: DD_TRACE_AGENT_PORT
+          value: "8126"
+        - name: DD_DOGSTATSD_PORT
+          value: "8125"
+        - name: DD_ENV
+          value: "dev"
+        - name: DD_SERVICE
+          value: "bookapi"
+        - name: DD_VERSION
+          value: "1.0.0"
+        - name: DD_APM_ENABLED
+          value: "true"
+        - name: DD_APM_NON_LOCAL_TRAFFIC
+          value: "true"
+        - name: DD_APM_ANALYTICS_ENABLED
+          value: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bookapi
+spec:
+  selector:
+    app: bookapi
+  ports:
+  - port: 80
+    targetPort: 9292
+  type: ClusterIP
