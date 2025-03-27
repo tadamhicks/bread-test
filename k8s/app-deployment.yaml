@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: bookapi
-        image: tadamhicks/bookapi:1.0.0
+        image: tadamhicks/bookapi:2.0.0
         ports:
         - containerPort: 9292
         resources:
