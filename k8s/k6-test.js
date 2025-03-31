@@ -24,45 +24,75 @@ const testBook = {
 };
 
 export default function() {
-  // GET all books (40% of requests)
-  if (Math.random() < 0.4) {
+  const rand = Math.random();
+  
+  // GET all books (25% of requests)
+  if (rand < 0.25) {
     const getAll = http.get(`${BASE_URL}/books`);
     check(getAll, {
       'get all books status is 200': (r) => r.status === 200,
     });
   }
   
-  // POST new book (30% of requests)
-  else if (Math.random() < 0.7) {
+  // GET book by ID (25% of requests)
+  else if (rand < 0.5) {
+    const getAll = http.get(`${BASE_URL}/books`);
+    if (getAll.status === 200) {
+      const books = JSON.parse(getAll.body);
+      if (books.length > 0) {
+        const randomBook = books[Math.floor(Math.random() * books.length)];
+        const getOne = http.get(`${BASE_URL}/books?id=${randomBook.id}`);
+        check(getOne, {
+          'get book by id status is 200': (r) => r.status === 200,
+        });
+      }
+    }
+  }
+  
+  // POST new book (20% of requests)
+  else if (rand < 0.7) {
     const create = http.post(`${BASE_URL}/books`, JSON.stringify(testBook), {
       headers: { 'Content-Type': 'application/json' },
     });
     check(create, {
       'create book status is 201': (r) => r.status === 201,
     });
-    
-    // If book was created successfully, try to get it
-    if (create.status === 201) {
-      const bookId = JSON.parse(create.body).id;
-      const getOne = http.get(`${BASE_URL}/books/${bookId}`);
-      check(getOne, {
-        'get single book status is 200': (r) => r.status === 200,
-      });
+  }
+  
+  // PUT update book (15% of requests)
+  else if (rand < 0.85) {
+    const getAll = http.get(`${BASE_URL}/books`);
+    if (getAll.status === 200) {
+      const books = JSON.parse(getAll.body);
+      if (books.length > 0) {
+        const randomBook = books[Math.floor(Math.random() * books.length)];
+        const updatedBook = {
+          ...testBook,
+          title: `Updated Book ${Date.now()}`,
+        };
+        const update = http.put(`${BASE_URL}/books?id=${randomBook.id}`, JSON.stringify(updatedBook), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        check(update, {
+          'update book status is 200': (r) => r.status === 200,
+        });
+      }
     }
   }
   
-  // PUT update book (30% of requests)
+  // DELETE book (15% of requests)
   else {
-    const updatedBook = {
-      ...testBook,
-      title: `Updated Book ${Date.now()}`
-    };
-    const update = http.put(`${BASE_URL}/books/1`, JSON.stringify(updatedBook), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-    check(update, {
-      'update book status is 200': (r) => r.status === 200,
-    });
+    const getAll = http.get(`${BASE_URL}/books`);
+    if (getAll.status === 200) {
+      const books = JSON.parse(getAll.body);
+      if (books.length > 0) {
+        const randomBook = books[Math.floor(Math.random() * books.length)];
+        const del = http.del(`${BASE_URL}/books?id=${randomBook.id}`);
+        check(del, {
+          'delete book status is 204': (r) => r.status === 204,
+        });
+      }
+    }
   }
   
   // Small random delay (0-100ms) to prevent exact simultaneous requests

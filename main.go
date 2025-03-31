@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,7 +20,17 @@ var statsdClient *statsd.Client
 func init() {
 	var err error
 	// Initialize StatsD client with extended metrics
-	statsdClient, err = statsd.New("127.0.0.1:8125",
+	host := os.Getenv("DD_AGENT_HOST")
+	if host == "" {
+		host = "otel-collector" // Default fallback
+	}
+	port := os.Getenv("DD_DOGSTATSD_PORT")
+	if port == "" {
+		port = "8125" // Default fallback
+	}
+	statsdEndpoint := fmt.Sprintf("%s:%s", host, port)
+	statsdClient, err = statsd.New(statsdEndpoint,
+		statsd.WithNamespace("bookapi."), // Add namespace prefix to all metrics
 		statsd.WithTags([]string{
 			"env:" + os.Getenv("DD_ENV"),
 			"service:" + os.Getenv("DD_SERVICE"),
@@ -57,10 +68,10 @@ func booksHandler(w http.ResponseWriter, r *http.Request) {
 		handleDeleteBook(w, r.WithContext(ctx), span)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		statsdClient.Incr("books.error", []string{"reason:method_not_allowed"}, 1)
+		statsdClient.Incr("books.requests.error", []string{"method:" + r.Method, "error:method_not_allowed"}, 1)
 	}
 
-	statsdClient.Timing("books.request.latency", time.Since(start), nil, 1)
+	statsdClient.Timing("books.requests.duration", time.Since(start), []string{"method:" + r.Method}, 1)
 }
 
 func handleGetBooks(w http.ResponseWriter, r *http.Request, span tracer.Span) {
@@ -68,20 +79,23 @@ func handleGetBooks(w http.ResponseWriter, r *http.Request, span tracer.Span) {
 	var err error
 	var rows *sql.Rows
 
+	var operation string
 	if id != "" {
+		operation = "get_by_id"
 		span.SetTag("book.id", id)
-		span.SetTag("operation", "get_book_by_id")
+		span.SetTag("operation", operation)
 		rows, err = db.QueryContext(r.Context(), "SELECT id, title, author, summary FROM books WHERE id = $1", id)
-		statsdClient.Incr("books.query.by_id", nil, 1)
+		statsdClient.Incr("books.queries.count", []string{"operation:" + operation}, 1)
 	} else {
-		span.SetTag("operation", "get_all_books")
+		operation = "get_all"
+		span.SetTag("operation", operation)
 		rows, err = db.QueryContext(r.Context(), "SELECT id, title, author, summary FROM books")
-		statsdClient.Incr("books.query.all", nil, 1)
+		statsdClient.Incr("books.queries.count", []string{"operation:" + operation}, 1)
 	}
 
 	if err != nil {
 		http.Error(w, "Failed to query books", http.StatusInternalServerError)
-		statsdClient.Incr("books.query.error", []string{"reason:db_query_failed"}, 1)
+		statsdClient.Incr("books.queries.errors", []string{"error:db_query_failed"}, 1)
 		return
 	}
 	defer rows.Close()
@@ -91,7 +105,7 @@ func handleGetBooks(w http.ResponseWriter, r *http.Request, span tracer.Span) {
 		var b Book
 		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Summary); err != nil {
 			http.Error(w, "Failed to scan book", http.StatusInternalServerError)
-			statsdClient.Incr("books.query.error", []string{"reason:scan_failed"}, 1)
+			statsdClient.Incr("books.queries.errors", []string{"error:scan_failed"}, 1)
 			return
 		}
 		books = append(books, b)
@@ -99,11 +113,11 @@ func handleGetBooks(w http.ResponseWriter, r *http.Request, span tracer.Span) {
 
 	if err := rows.Err(); err != nil {
 		http.Error(w, "Rows error", http.StatusInternalServerError)
-		statsdClient.Incr("books.query.error", []string{"reason:rows_error"}, 1)
+		statsdClient.Incr("books.queries.errors", []string{"error:rows_error"}, 1)
 		return
 	}
 
-	statsdClient.Incr("books.query.success", nil, 1)
+	statsdClient.Incr("books.queries.success", []string{"operation:" + operation}, 1)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(books)
 }
@@ -113,7 +127,7 @@ func handleCreateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	var book Book
 	if err := json.NewDecoder(r.Body).Decode(&book); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		statsdClient.Incr("books.create.error", []string{"reason:invalid_body"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:create", "error:invalid_body"}, 1)
 		return
 	}
 
@@ -122,13 +136,13 @@ func handleCreateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 		book.Title, book.Author, book.Summary)
 	if err != nil {
 		http.Error(w, "Failed to create book", http.StatusInternalServerError)
-		statsdClient.Incr("books.create.error", []string{"reason:db_insert_failed"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:create", "error:db_insert_failed"}, 1)
 		return
 	}
 
 	id, _ := result.LastInsertId()
 	book.ID = int(id)
-	statsdClient.Incr("books.create.success", nil, 1)
+	statsdClient.Incr("books.operations.success", []string{"operation:create"}, 1)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -140,7 +154,7 @@ func handleUpdateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing book ID", http.StatusBadRequest)
-		statsdClient.Incr("books.update.error", []string{"reason:missing_id"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:update", "error:missing_id"}, 1)
 		return
 	}
 	span.SetTag("book.id", id)
@@ -148,7 +162,7 @@ func handleUpdateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	var book Book
 	if err := json.NewDecoder(r.Body).Decode(&book); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		statsdClient.Incr("books.update.error", []string{"reason:invalid_body"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:update", "error:invalid_body"}, 1)
 		return
 	}
 
@@ -157,18 +171,18 @@ func handleUpdateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 		book.Title, book.Author, book.Summary, id)
 	if err != nil {
 		http.Error(w, "Failed to update book", http.StatusInternalServerError)
-		statsdClient.Incr("books.update.error", []string{"reason:db_update_failed"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:update", "error:db_update_failed"}, 1)
 		return
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		http.Error(w, "Book not found", http.StatusNotFound)
-		statsdClient.Incr("books.update.error", []string{"reason:not_found"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:update", "error:not_found"}, 1)
 		return
 	}
 
-	statsdClient.Incr("books.update.success", nil, 1)
+	statsdClient.Incr("books.operations.success", []string{"operation:update"}, 1)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -177,7 +191,7 @@ func handleDeleteBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing book ID", http.StatusBadRequest)
-		statsdClient.Incr("books.delete.error", []string{"reason:missing_id"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:delete", "error:missing_id"}, 1)
 		return
 	}
 	span.SetTag("book.id", id)
@@ -185,23 +199,23 @@ func handleDeleteBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	result, err := db.ExecContext(r.Context(), "DELETE FROM books WHERE id = $1", id)
 	if err != nil {
 		http.Error(w, "Failed to delete book", http.StatusInternalServerError)
-		statsdClient.Incr("books.delete.error", []string{"reason:db_delete_failed"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:delete", "error:db_delete_failed"}, 1)
 		return
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		http.Error(w, "Book not found", http.StatusNotFound)
-		statsdClient.Incr("books.delete.error", []string{"reason:not_found"}, 1)
+		statsdClient.Incr("books.operations.errors", []string{"operation:delete", "error:not_found"}, 1)
 		return
 	}
 
-	statsdClient.Incr("books.delete.success", nil, 1)
+	statsdClient.Incr("books.operations.success", []string{"operation:delete"}, 1)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	statsdClient.Incr("healthcheck.hit", nil, 1)
+	statsdClient.Incr("health.checks", []string{"status:ok"}, 1)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
