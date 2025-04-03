@@ -60,10 +60,10 @@ data:
 
         metrics:
           receivers: [datadog/connector]
-          processors: [batch]
+          processors: [resource, batch]
           exporters: [datadog/exporter]
 
         metrics/statsd:
           receivers: [statsd]
-          processors: [batch]
+          processors: [resource, batch]
           exporters: [datadog/exporter]
