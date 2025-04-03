@@ -10,13 +10,28 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/opentracing/opentracing-go"
+	ddext "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	ddopentracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
+	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	_ "github.com/lib/pq"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var statsdClient *statsd.Client
+var (
+	db           *sql.DB
+	statsdClient *statsd.Client
+)
 
+// Book represents a single book entity
+type Book struct {
+	ID      int    `json:"id"`
+	Title   string `json:"title"`
+	Author  string `json:"author"`
+	Summary string `json:"summary"`
+}
+
+// init initializes the StatsD client
 func init() {
 	var err error
 	// Initialize StatsD client with extended metrics
@@ -29,43 +44,86 @@ func init() {
 		port = "8125" // Default fallback
 	}
 	statsdEndpoint := fmt.Sprintf("%s:%s", host, port)
-	statsdClient, err = statsd.New(statsdEndpoint,
+
+	statsdClient, err = statsd.New(
+		statsdEndpoint,
 		statsd.WithNamespace("bookapi."), // Add namespace prefix to all metrics
 		statsd.WithTags([]string{
 			"env:" + os.Getenv("DD_ENV"),
 			"service:" + os.Getenv("DD_SERVICE"),
 			"version:" + os.Getenv("DD_VERSION"),
 		}),
-		statsd.WithoutTelemetry(), // Disable internal telemetry to avoid duplicate metrics
+		statsd.WithoutTelemetry(), // Disable internal telemetry to avoid duplicates
 	)
 	if err != nil {
 		log.Fatalf("Failed to create StatsD client: %v", err)
 	}
 }
 
-type Book struct {
-	ID      int    `json:"id"`
-	Title   string `json:"title"`
-	Author  string `json:"author"`
-	Summary string `json:"summary"`
+// OpenTracingMiddleware is a simple middleware that starts an OpenTracing span
+// for each incoming request, sets relevant Datadog tags, and injects the span
+// into the request context.
+type OpenTracingMiddleware struct {
+	handler http.Handler
 }
 
-var db *sql.DB
+func (mw *OpenTracingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Extract any existing span context from the incoming request
+	spanCtx, _ := opentracing.GlobalTracer().Extract(
+		opentracing.HTTPHeaders,
+		opentracing.HTTPHeadersCarrier(r.Header),
+	)
+
+	// Start a new span named "http.request" as the child of any extracted span
+	span := opentracing.StartSpan(
+		"http.request",
+		opentracing.ChildOf(spanCtx),
+	)
+	defer span.Finish()
+
+	// Add Datadog-specific tags
+	span.SetTag(ddext.SpanType, ddext.SpanTypeWeb)
+	span.SetTag(ddext.ResourceName, r.URL.Path)
+	span.SetTag(ddext.HTTPMethod, r.Method)
+	span.SetTag(ddext.HTTPURL, r.URL.String())
+	span.SetTag(ddext.Component, "booksapi")
+
+	// Add environment, service, version as well (Datadog best practice)
+	if env := os.Getenv("DD_ENV"); env != "" {
+		span.SetTag("env", env)
+	}
+	if svc := os.Getenv("DD_SERVICE"); svc != "" {
+		span.SetTag("service.name", svc)
+	}
+	if ver := os.Getenv("DD_VERSION"); ver != "" {
+		span.SetTag("service.version", ver)
+	}
+
+	// Put this span into the context so downstream handlers can retrieve it
+	ctx := opentracing.ContextWithSpan(r.Context(), span)
+	r = r.WithContext(ctx)
+
+	// Continue to the next handler
+	mw.handler.ServeHTTP(w, r)
+}
 
 func booksHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request")
-	defer span.Finish()
+
+	// Retrieve span from context if you want to annotate further
+	span := opentracing.SpanFromContext(r.Context())
+	// Optionally set extra tags
+	span.SetTag("endpoint", "/books")
 
 	switch r.Method {
 	case http.MethodGet:
-		handleGetBooks(w, r.WithContext(ctx), span)
+		handleGetBooks(w, r)
 	case http.MethodPost:
-		handleCreateBook(w, r.WithContext(ctx), span)
+		handleCreateBook(w, r)
 	case http.MethodPut:
-		handleUpdateBook(w, r.WithContext(ctx), span)
+		handleUpdateBook(w, r)
 	case http.MethodDelete:
-		handleDeleteBook(w, r.WithContext(ctx), span)
+		handleDeleteBook(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		statsdClient.Incr("books.requests.error", []string{"method:" + r.Method, "error:method_not_allowed"}, 1)
@@ -74,7 +132,8 @@ func booksHandler(w http.ResponseWriter, r *http.Request) {
 	statsdClient.Timing("books.requests.duration", time.Since(start), []string{"method:" + r.Method}, 1)
 }
 
-func handleGetBooks(w http.ResponseWriter, r *http.Request, span tracer.Span) {
+func handleGetBooks(w http.ResponseWriter, r *http.Request) {
+	span := opentracing.SpanFromContext(r.Context())
 	id := r.URL.Query().Get("id")
 	var err error
 	var rows *sql.Rows
@@ -122,8 +181,10 @@ func handleGetBooks(w http.ResponseWriter, r *http.Request, span tracer.Span) {
 	json.NewEncoder(w).Encode(books)
 }
 
-func handleCreateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) {
+func handleCreateBook(w http.ResponseWriter, r *http.Request) {
+	span := opentracing.SpanFromContext(r.Context())
 	span.SetTag("operation", "create_book")
+
 	var book Book
 	if err := json.NewDecoder(r.Body).Decode(&book); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -149,8 +210,10 @@ func handleCreateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	json.NewEncoder(w).Encode(book)
 }
 
-func handleUpdateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) {
+func handleUpdateBook(w http.ResponseWriter, r *http.Request) {
+	span := opentracing.SpanFromContext(r.Context())
 	span.SetTag("operation", "update_book")
+
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing book ID", http.StatusBadRequest)
@@ -186,8 +249,10 @@ func handleUpdateBook(w http.ResponseWriter, r *http.Request, span tracer.Span) 
 	w.WriteHeader(http.StatusOK)
 }
 
-func handleDeleteBook(w http.ResponseWriter, r *http.Request, span tracer.Span) {
+func handleDeleteBook(w http.ResponseWriter, r *http.Request) {
+	span := opentracing.SpanFromContext(r.Context())
 	span.SetTag("operation", "delete_book")
+
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing book ID", http.StatusBadRequest)
@@ -221,16 +286,18 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// Start tracer with runtime metrics enabled
-	tracer.Start(
-		tracer.WithEnv(os.Getenv("DD_ENV")),
-		tracer.WithServiceName(os.Getenv("DD_SERVICE")),
-		tracer.WithServiceVersion(os.Getenv("DD_VERSION")),
-		tracer.WithRuntimeMetrics(),        // Enable runtime metrics collection
-		tracer.WithProfilerEndpoints(true), // Enable profiling endpoints
+	// Initialize Datadog tracer using OpenTracing bridging
+	t := ddopentracer.New(
+		ddtracer.WithEnv(os.Getenv("DD_ENV")),
+		ddtracer.WithServiceName(os.Getenv("DD_SERVICE")),
+		ddtracer.WithServiceVersion(os.Getenv("DD_VERSION")),
+		ddtracer.WithRuntimeMetrics(),        // Enable runtime metrics
+		ddtracer.WithProfilerEndpoints(true), // Enable profiler endpoints
 	)
-	defer tracer.Stop()
+	opentracing.SetGlobalTracer(t)
+	defer ddtracer.Stop()
 
+	// Connect to Postgres
 	var err error
 	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -241,6 +308,10 @@ func main() {
 	mux.HandleFunc("/books", booksHandler)
 	mux.HandleFunc("/healthz", healthCheckHandler)
 
+	// Wrap the mux with our OpenTracing middleware
+	wrappedMux := &OpenTracingMiddleware{handler: mux}
+
 	log.Println("Server is running on :9292")
-	http.ListenAndServe(":9292", httptrace.WrapHandler(mux, os.Getenv("DD_SERVICE"), "books-api"))
+	// No httptrace.WrapHandler here; we’re manually handling the tracing
+	http.ListenAndServe(":9292", wrappedMux)
 }

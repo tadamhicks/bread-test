@@ -25,13 +25,13 @@ data:
       resource:
         attributes:
           - key: service.name
-            value: bookapi
+            value: "bookapi"
             action: insert
           - key: deployment.environment
-            value: dev
+            value: "dev"
             action: insert
           - key: deployment.version
-            value: 1.0.0
+            value: "1.0.0"
             action: insert
 
     connectors:
@@ -55,7 +55,7 @@ data:
       pipelines:
         traces:
           receivers: [datadog]
-          processors: [batch, resource]
+          processors: [batch, memory_limiter, resource]
           exporters: [datadog/connector, datadog/exporter]
 
         metrics:
