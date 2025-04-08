@@ -1,6 +1,9 @@
 site_name: 'bread-test'
+
+docs_dir: docs
+
 nav:
-  - Home: index.md
+  - Home: README.md
 
 plugins:
   - techdocs-core
