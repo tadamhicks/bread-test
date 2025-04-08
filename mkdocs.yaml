@@ -1,6 +1,8 @@
 site_name: 'bread-test'
 site_url: https://github.com/tadamhicks/bread-test
 
+docs_dir: docs
+
 nav:
   - Home: README.md
 
