@@ -4,7 +4,7 @@ metadata:
   name: bread-test
   annotations:
     github.com/project-slug: tadamhicks/bread-test
-    backstage.io/techdocs-ref: ./docs
+    backstage.io/techdocs-ref: dir:./docs
 spec:
   type: other
   lifecycle: unknown
