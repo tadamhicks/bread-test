@@ -1,6 +1,6 @@
 site_name: 'bread-test'
 
-docs_dir: docs
+docs_dir: .
 
 nav:
   - Home: README.md
