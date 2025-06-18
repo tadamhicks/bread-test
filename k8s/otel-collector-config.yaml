@@ -5,13 +5,6 @@ metadata:
 data:
   config.yaml: |
     receivers:
-      datadog:
-        endpoint: 0.0.0.0:8126
-      statsd:
-        endpoint: 0.0.0.0:8125
-        aggregation_interval: 10s
-        enable_metric_type: true
-
     processors:
       batch:
         timeout: 10s
@@ -35,17 +28,7 @@ data:
             action: insert
 
     connectors:
-      datadog/connector:
-        traces:
-          # Filter out any spans that should not count toward metrics (optional)
-          ignore_resources: [ "(GET|POST) /healthcheck", "(GET|POST) /probe" ]
-
     exporters:
-      datadog/exporter:
-        api:
-          key: ${DD_API_KEY}
-          site: datadoghq.com
-
     service:
       telemetry:
         logs:
@@ -54,16 +37,16 @@ data:
           level: detailed
       pipelines:
         traces:
-          receivers: [datadog]
+          receivers: []
           processors: [batch, memory_limiter, resource]
-          exporters: [datadog/connector, datadog/exporter]
+          exporters: []
 
         metrics:
-          receivers: [datadog/connector]
+          receivers: []
           processors: [resource, batch]
-          exporters: [datadog/exporter]
+          exporters: []
 
         metrics/statsd:
-          receivers: [statsd]
+          receivers: []
           processors: [resource, batch]
-          exporters: [datadog/exporter]
+          exporters: []
