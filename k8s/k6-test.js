@@ -14,7 +14,7 @@ export let options = {
   },
 };
 
-const BASE_URL = 'http://bookapi.bookapi.svc.cluster.local';
+const BASE_URL = 'http://bookapi.books.svc.cluster.local';
 
 // Sample book data
 const testBook = {

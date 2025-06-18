@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: bookapi
-        image: tadamhicks/bookapi:3.0.7
+        image: tadamhicks/bookapi:3.0.14
         ports:
         - containerPort: 9292
         resources:
@@ -29,36 +29,6 @@ spec:
           value: "9292"
         - name: DATABASE_URL
           value: "postgres://postgres:postgres@postgres:5432/bookdb?sslmode=disable"
-        - name: DD_ENV
-          value: "dev"
-        - name: DD_VERSION
-          value: "1.0.0"
-        - name: DD_AGENT_HOST
-          value: "otel-collector"
-        - name: DD_TRACE_AGENT_PORT
-          value: "8126"
-        - name: DD_DOGSTATSD_PORT
-          value: "8125"
-        - name: DD_ENV
-          value: "dev"
-        - name: DD_SERVICE
-          value: "bookapi"
-        - name: DD_VERSION
-          value: "1.0.0"
-        - name: DD_APM_ENABLED
-          value: "true"
-        - name: DD_APM_NON_LOCAL_TRAFFIC
-          value: "true"
-        - name: DD_APM_ANALYTICS_ENABLED
-          value: "true"
-        - name: DD_TRACE_ENABLED
-          value: "true"
-        - name: DD_TRACE_DEBUG
-          value: "true"
-        - name: DD_TRACE_STARTUP_LOGS
-          value: "true"
-        - name: DD_TRACE_SAMPLE_RATE
-          value: "1"
 ---
 apiVersion: v1
 kind: Service
