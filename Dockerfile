@@ -1,7 +1,7 @@
-FROM --platform=$BUILDPLATFORM alpine:3.20.2 AS builder
+FROM --platform=linux/amd64 golang:1.23-alpine AS builder
 
-# Install Go
-RUN apk add --no-cache go
+# Install build dependencies
+RUN apk add --no-cache git
 
 WORKDIR /app
 
@@ -14,12 +14,11 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the application with cross-platform support
-ARG TARGETARCH
-RUN GOOS=linux GOARCH=$TARGETARCH go build -o main .
+# Build the application for AMD64
+RUN GOOS=linux GOARCH=amd64 go build -o main .
 
 # Final stage
-FROM --platform=$TARGETPLATFORM alpine:3.20.2
+FROM --platform=linux/amd64 alpine:3.20.2
 
 WORKDIR /app
 

@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: bookapi
+  namespace: books
 spec:
   replicas: 1
   selector:
@@ -14,7 +15,7 @@ spec:
     spec:
       containers:
       - name: bookapi
-        image: tadamhicks/bookapi:3.0.14
+        image: tadamhicks/bookapi:3.0.23
         ports:
         - containerPort: 9292
         resources:
@@ -25,10 +26,45 @@ spec:
             cpu: "200m"
             memory: "256Mi"
         env:
+        # Application configuration
         - name: PORT
           value: "9292"
         - name: DATABASE_URL
           value: "postgres://postgres:postgres@postgres:5432/bookdb?sslmode=disable"
+        
+        # OpenTelemetry configuration
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "otel-collector:4318"
+        
+        # OpenTelemetry service identification (required for groundcover)
+        - name: OTEL_SERVICE_NAME
+          value: "bookapi"
+        - name: OTEL_SERVICE_VERSION
+          value: "1.0.0"
+        - name: OTEL_ENVIRONMENT
+          value: "production"
+        
+        # Kubernetes metadata for OpenTelemetry resource attributes
+        # These attributes are REQUIRED for traces to appear properly in groundcover
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: CONTAINER_NAME
+          value: "bookapi"  # No Downward API field available; known from spec
+        # Option A: Direct value (current working approach)
+        - name: CLUSTER_NAME
+          value: "automode-cluster"
+        # Option B: ConfigMap approach (requires cluster-info ConfigMap)
+        # - name: CLUSTER_NAME
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: cluster-info
+        #       key: cluster-name
 ---
 apiVersion: v1
 kind: Service

@@ -2,6 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: k6-test
+  namespace: books
 data:
   test.js: |
     import http from 'k6/http';
@@ -11,11 +12,11 @@ data:
       scenarios: {
         constant_load: {
           executor: 'constant-arrival-rate',
-          rate: 2,              // 2 iterations per second = ~120 per minute
-          timeUnit: '1s',       // 1 second
-          duration: '1m',       // Run for 1 minute
-          preAllocatedVUs: 5,   // Initial pool of VUs
-          maxVUs: 10,          // Maximum pool of VUs
+          rate: 2,
+          timeUnit: '1s',
+          duration: '1m',
+          preAllocatedVUs: 5,
+          maxVUs: 10,
         },
       },
     };
@@ -29,15 +30,14 @@ data:
     };
 
     export default function() {
-      // GET all books (40% of requests)
+      // GET all books (40%)
       if (Math.random() < 0.4) {
         const getAll = http.get(`${BASE_URL}/books`);
         check(getAll, {
           'get all books status is 200': (r) => r.status === 200,
         });
       }
-      
-      // POST new book (30% of requests)
+      // POST new book (30%)
       else if (Math.random() < 0.7) {
         const create = http.post(`${BASE_URL}/books`, JSON.stringify(testBook), {
           headers: { 'Content-Type': 'application/json' },
@@ -45,8 +45,7 @@ data:
         check(create, {
           'create book status is 201': (r) => r.status === 201,
         });
-        
-        // If book was created successfully, try to get it
+
         if (create.status === 201) {
           const bookId = JSON.parse(create.body).id;
           const getOne = http.get(`${BASE_URL}/books/${bookId}`);
@@ -55,13 +54,11 @@ data:
           });
         }
       }
-      
-      // PUT update book (30% of requests)
+      // PUT update book (30%)
       else {
-        const updatedBook = {
-          ...testBook,
+        const updatedBook = Object.assign({}, testBook, {
           title: `Updated Book ${Date.now()}`
-        };
+        });
         const update = http.put(`${BASE_URL}/books/1`, JSON.stringify(updatedBook), {
           headers: { 'Content-Type': 'application/json' },
         });
@@ -69,6 +66,6 @@ data:
           'update book status is 200': (r) => r.status === 200,
         });
       }
-      
+
       sleep(Math.random() * 0.1);
     }
