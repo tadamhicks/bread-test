@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: book-api-postgres
+    environment:
+      POSTGRES_DB: bookdb
+      POSTGRES_USER: bookuser
+      POSTGRES_PASSWORD: bookpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookuser -d bookdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OpenTelemetry Collector - sends data to Groundcover inCloud managed endpoint
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: book-api-otel-collector
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics
+    environment:
+      - GOMEMLIMIT=128MiB
+
+  # Book API Application (optional - for containerized setup)
+  book-api:
+    build: .
+    container_name: book-api-app
+    ports:
+      - "9292:9292"
+    environment:
+      - DATABASE_URL=postgres://bookuser:bookpass@postgres:5432/bookdb?sslmode=disable
+      - OTEL_SERVICE_NAME=book-api
+      - OTEL_SERVICE_VERSION=1.0.0
+      - OTEL_ENVIRONMENT=development
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    profiles:
+      - full-stack  # Use 'docker-compose --profile full-stack up' to include this
+
+volumes:
+  postgres_data: 

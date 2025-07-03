@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-runner-script
+  namespace: books
+data:
+  run.sh: |
+    #!/bin/sh
+    while true; do
+      echo "Starting k6 run..."
+      k6 run /tests/test.js
+      echo "Run complete. Sleeping before next iteration..."
+      sleep 10
+    done

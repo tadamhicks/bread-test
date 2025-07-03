@@ -1,18 +1,11 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: otel-collector-secrets
-type: Opaque
-data:
-  # These are placeholder values - replace with your actual API keys
-  DD_API_KEY: ${BASE64_ENCODED_DD_API_KEY}
-  #DT_API_TOKEN: ${BASE64_ENCODED_DT_API_TOKEN}
-  #DT_API_URL: ${BASE64_ENCODED_DT_API_URL}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: otel-collector
+  namespace: books
+  labels:
+    app: otel-collector
 spec:
   replicas: 1
   selector:
@@ -28,59 +21,84 @@ spec:
         image: otel/opentelemetry-collector-contrib:latest
         command:
           - "/otelcol-contrib"
-        args:
-          - "--config=/etc/otel/config.yaml"
-        resources:
-          limits:
-            cpu: "1"
-            memory: "2Gi"
-          requests:
-            cpu: "200m"
-            memory: "400Mi"
+          - "--config=/etc/otel-collector-config.yml"
         ports:
-        - containerPort: 8126
-          name: dd-traces
-        - containerPort: 8125
-          name: statsd
-          protocol: UDP
-        volumeMounts:
-        - name: otel-collector-config
-          mountPath: /etc/otel
+        - name: otlp-grpc
+          containerPort: 4317
+          protocol: TCP
+        - name: otlp-http
+          containerPort: 4318
+          protocol: TCP
+        - name: metrics
+          containerPort: 8888
+          protocol: TCP
+        - name: health
+          containerPort: 13133
+          protocol: TCP
+        - name: pprof
+          containerPort: 1777
+          protocol: TCP
+        - name: zpages
+          containerPort: 55679
+          protocol: TCP
         env:
-        - name: DD_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: otel-collector-secrets
-              key: DD_API_KEY
-        - name: OTEL_CONFIG_FILE
-          value: "/etc/otel/config.yaml"
-        # - name: DT_API_TOKEN
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: otel-collector-secrets
-        #       key: DT_API_TOKEN
-        # - name: DT_API_URL
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: otel-collector-secrets
-        #       key: DT_API_URL
+        - name: GOMEMLIMIT
+          value: "128MiB"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: otel-collector-config-vol
+          mountPath: /etc/otel-collector-config.yml
+          subPath: otel-collector-config.yml
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 5
+          periodSeconds: 5
       volumes:
-      - name: otel-collector-config
+      - name: otel-collector-config-vol
         configMap:
           name: otel-collector-config
+          items:
+          - key: otel-collector-config.yml
+            path: otel-collector-config.yml
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: otel-collector
+  labels:
+    app: otel-collector
 spec:
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP
+  - name: metrics
+    port: 8888
+    targetPort: 8888
+    protocol: TCP
+  - name: health
+    port: 13133
+    targetPort: 13133
+    protocol: TCP
   selector:
     app: otel-collector
-  ports:
-  - name: dd-traces
-    port: 8126
-    targetPort: 8126
-  - name: statsd
-    port: 8125
-    targetPort: 8125
-    protocol: UDP
+  type: ClusterIP
