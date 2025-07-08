@@ -14,39 +14,47 @@ A Go-based REST API for managing books with comprehensive OpenTelemetry tracing 
 
 ## OpenTelemetry Integration for Groundcover
 
-### Required Resource Attributes for Groundcover Searchability
+### OpenTelemetry Attributes for Groundcover Integration
 
-For OpenTelemetry traces to appear properly in Groundcover and be searchable by cluster, namespace, and workload, the following resource attributes **MUST** be configured:
+Groundcover is highly flexible and can ingest OpenTelemetry traces with **any attributes**. However, certain attributes provide enhanced user experience and built-in filtering capabilities:
 
-#### Essential Kubernetes Metadata
+#### Hard Requirements vs Best Practices
+
+| Attribute | Status | Purpose | Impact if Missing |
+|-----------|---------|---------|------------------|
+| **`service.name`** | ✅ **REQUIRED** | Enables span querying (hardcoded in groundcover) | **Cannot query spans without this** |
+| **`k8s.cluster.name`** | 🟡 **Best Practice** | Built-in cluster filtering/zoom | Must use custom queries |
+| **`k8s.namespace.name`** | 🟡 **Best Practice** | Built-in namespace filtering | Must use custom queries |
+| **`k8s.pod.name`** | 🟢 **Optional** | Enhanced trace context | Less detailed trace info |
+| **`k8s.container.name`** | 🟢 **Optional** | Container-level insights | Less detailed trace info |
+| **`deployment.environment`** | 🟢 **Optional** | Environment-based filtering | Must use custom queries |
+
+#### OpenTelemetry Resource Attributes
 ```go
-// These semantic conventions map to groundcover's search dimensions
-semconv.K8SClusterName(clusterName)     // Maps to: cluster field in groundcover
-semconv.K8SNamespaceName(namespace)     // Maps to: namespace field in groundcover  
-semconv.K8SPodName(podName)             // Maps to: podName field in groundcover
-semconv.K8SContainerName(containerName) // Maps to: containerName field in groundcover
-```
+// REQUIRED for span querying
+semconv.ServiceName(serviceName)        // ✅ MUST be present
 
-#### Service Identification
-```go
-semconv.ServiceName(serviceName)        // Maps to: workload field in groundcover
-semconv.ServiceVersion(version)         // Used for version tracking
-semconv.DeploymentEnvironment(env)      // Maps to: env field in groundcover
+// Best practices for enhanced UX
+semconv.K8SClusterName(clusterName)     // 🟡 Enables cluster zoom feature
+semconv.K8SNamespaceName(namespace)     // 🟡 Enables namespace filtering  
+semconv.K8SPodName(podName)             // 🟢 Adds pod context
+semconv.K8SContainerName(containerName) // 🟢 Adds container context
+semconv.DeploymentEnvironment(env)      // 🟢 Enables env filtering
 ```
 
 ### Environment Variable Configuration
 
 The application uses `getEnvOrDefault()` to allow all attributes to be overridden via environment variables. Instead of hardcoding values, you can use Kubernetes APIs to dynamically populate these values:
 
-| Environment Variable | OpenTelemetry Attribute | Groundcover Field | Required | Default |
-|---------------------|------------------------|------------------|----------|---------|
-| `CLUSTER_NAME` | `k8s.cluster.name` | `cluster` | **YES** | `automode-cluster` |
-| `NAMESPACE` | `k8s.namespace.name` | `namespace` | **YES** | `books` |
-| `POD_NAME` | `k8s.pod.name` | `podName` | **YES** | Auto-injected |
-| `CONTAINER_NAME` | `k8s.container.name` | `containerName` | **YES** | `bookapi` |
-| `OTEL_SERVICE_NAME` | `service.name` | `workload` | **YES** | `bookapi` |
-| `OTEL_SERVICE_VERSION` | `service.version` | N/A | No | `1.0.0` |
-| `OTEL_ENVIRONMENT` | `deployment.environment` | `env` | No | `development` |
+| Environment Variable | OpenTelemetry Attribute | Groundcover Field | Status | Default |
+|---------------------|------------------------|------------------|--------|---------|
+| `OTEL_SERVICE_NAME` | `service.name` | `workload` | ✅ **REQUIRED** | `bookapi` |
+| `CLUSTER_NAME` | `k8s.cluster.name` | `cluster` | 🟡 **Best Practice** | `automode-cluster` |
+| `NAMESPACE` | `k8s.namespace.name` | `namespace` | 🟡 **Best Practice** | `books` |
+| `POD_NAME` | `k8s.pod.name` | `podName` | 🟢 **Optional** | Auto-injected |
+| `CONTAINER_NAME` | `k8s.container.name` | `containerName` | 🟢 **Optional** | `bookapi` |
+| `OTEL_SERVICE_VERSION` | `service.version` | N/A | 🟢 **Optional** | `1.0.0` |
+| `OTEL_ENVIRONMENT` | `deployment.environment` | `env` | 🟢 **Optional** | `development` |
 
 ### Kubernetes API-Based Metadata (Recommended)
 
@@ -140,40 +148,54 @@ The `k8s/app-deployment.yaml` shows the complete configuration:
 
 ```yaml
 env:
-# OpenTelemetry service identification (required for groundcover)
+# REQUIRED: Service identification for span querying
 - name: OTEL_SERVICE_NAME
-  value: "bookapi"                    # → workload field
+  value: "bookapi"                    # ✅ REQUIRED → workload field
 - name: OTEL_SERVICE_VERSION  
-  value: "1.0.0"
+  value: "1.0.0"                      # 🟢 Optional
 - name: OTEL_ENVIRONMENT
-  value: "production"                 # → env field
+  value: "production"                 # 🟢 Optional → env field
 
-# Kubernetes metadata (REQUIRED for proper groundcover organization)
+# BEST PRACTICE: Kubernetes metadata for enhanced filtering
+- name: CLUSTER_NAME
+  value: "automode-cluster"           # 🟡 Best Practice → cluster zoom feature
 - name: NAMESPACE
   valueFrom:
     fieldRef:
-      fieldPath: metadata.namespace   # → namespace field
+      fieldPath: metadata.namespace   # 🟡 Best Practice → namespace filtering
 - name: POD_NAME
   valueFrom:
     fieldRef:
-      fieldPath: metadata.name        # → podName field  
+      fieldPath: metadata.name        # 🟢 Optional → enhanced context
 - name: CONTAINER_NAME
-  value: "bookapi"                    # → containerName field
-- name: CLUSTER_NAME
-  value: "automode-cluster"           # → cluster field
+  value: "bookapi"                    # 🟢 Optional → container insights
 ```
 
-### Groundcover Search Examples
+### Groundcover Search Flexibility
 
-With proper resource attributes, traces will be searchable in groundcover:
+Groundcover provides a **flexible query bar** where you can filter on **any attributes**. Built-in filtering features require specific attributes:
 
-| Search Filter | Example Values | Purpose |
-|--------------|----------------|---------|
-| **Cluster** | `automode-cluster` | Filter by EKS cluster |
-| **Namespace** | `books` | Filter by Kubernetes namespace |
-| **Workload** | `bookapi` | Filter by service/application |
-| **Source** | `opentelemetry` | Filter by telemetry source |
-| **Trace ID** | `8907aaca208201935f9989c511de21fe` | Find specific trace |
+| Search Type | Requires Attribute | Example Query | Experience |
+|------------|-------------------|---------------|-----------|
+| **Built-in Cluster Zoom** | `k8s.cluster.name` | Click cluster filter | ✅ Rich UI experience |
+| **Built-in Namespace Filter** | `k8s.namespace.name` | Click namespace filter | ✅ Rich UI experience |
+| **Span Querying** | `service.name` | Any span query | ✅ **REQUIRED** functionality |
+| **Custom Filtering** | Any attribute | `custom.attr:value` | ✅ Always available |
+
+#### Example Queries
+
+```
+# Built-in filters (if attributes present)
+cluster:automode-cluster
+namespace:books
+workload:bookapi
+
+# Custom attribute queries (always work)
+k8s.pod.name:bookapi-xxx-yyy
+deployment.environment:production
+custom.team:platform
+http.status_code:404
+```
 
 ### Collector-Based Metadata Enrichment (Alternative Approach)
 
@@ -224,19 +246,18 @@ processors:
 #### Example: Minimal Application Configuration
 
 ```yaml
-# Application only needs basic OTEL config
+# Application only needs the REQUIRED attribute
 env:
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: "http://otel-collector:4318"
 - name: OTEL_SERVICE_NAME
-  value: "my-app"
+  value: "my-app"  # ✅ REQUIRED for span querying
 
-# NO Kubernetes metadata needed!
-# Collector automatically adds:
-# - k8s.namespace.name: "books"
-# - k8s.pod.name: "my-app-xxx-yyy"  
-# - k8s.container.name: "my-app"
-# - k8s.cluster.name: "automode-cluster"
+# Collector automatically adds best practice attributes:
+# - k8s.cluster.name: "automode-cluster"     # 🟡 Enables cluster zoom
+# - k8s.namespace.name: "books"              # 🟡 Enables namespace filtering
+# - k8s.pod.name: "my-app-xxx-yyy"          # 🟢 Enhances trace context
+# - k8s.container.name: "my-app"            # 🟢 Adds container insights
 ```
 
 #### Files for Collector-Based Approach
@@ -247,19 +268,68 @@ env:
 
 ### Verification
 
-To verify your traces have the correct attributes, check that groundcover queries return:
+To verify your traces are working optimally in groundcover, check the attributes:
 
 ```json
 {
-  "cluster": "automode-cluster",     // ✅ Required
-  "namespace": "books",              // ✅ Required  
-  "workload": "bookapi",             // ✅ Required
-  "podName": "bookapi-xxx-yyy",      // ✅ Required
-  "containerName": "bookapi",        // ✅ Required
-  "source": "opentelemetry",         // ✅ Required
-  "env": "production"                // Optional but recommended
+  "workload": "bookapi",             // ✅ REQUIRED for span querying
+  "cluster": "automode-cluster",     // 🟡 Best practice for cluster zoom
+  "namespace": "books",              // 🟡 Best practice for namespace filtering
+  "podName": "bookapi-xxx-yyy",      // 🟢 Optional for enhanced context
+  "containerName": "bookapi",        // 🟢 Optional for container insights
+  "source": "opentelemetry",         // 🟢 Automatic (shows integration working)
+  "env": "production"                // 🟢 Optional for environment filtering
 }
 ```
+
+#### Minimum Working Configuration
+
+The **absolute minimum** for groundcover integration:
+
+```yaml
+env:
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: "http://otel-collector:4318"
+- name: OTEL_SERVICE_NAME
+  value: "my-app"  # ✅ ONLY requirement for span querying
+```
+
+Everything else enhances the user experience but is **not required**!
+
+### Understanding Groundcover's Flexibility
+
+**Key Point**: Groundcover can ingest and display traces with **any attributes**. The distinctions above are about user experience:
+
+#### What Actually Happens:
+
+1. **✅ REQUIRED: `service.name`**
+   - Groundcover has hardcoded logic that looks for this attribute
+   - Without it: Cannot query spans, severely limited functionality
+   - With it: Full span querying and analysis capabilities
+
+2. **🟡 BEST PRACTICE: Kubernetes Attributes**
+   - Purpose: Enable built-in UI features (cluster zoom, namespace filtering)
+   - Without them: Must use custom queries (`k8s.cluster.name:my-cluster`)
+   - With them: Click-to-filter in the UI
+
+3. **🟢 OPTIONAL: Custom Attributes**
+   - Purpose: Enhanced filtering and context
+   - Examples: `team:platform`, `version:1.2.3`, `region:us-east-1`
+   - Always queryable via the flexible query bar
+
+#### Query Bar Examples:
+
+```
+# Works with any attributes you send:
+service.name:bookapi
+http.status_code:404
+custom.team:platform
+error.type:timeout
+user.id:12345
+region:us-west-2
+```
+
+The beauty of groundcover is you can **start simple** with just `service.name` and **gradually add attributes** to improve your observability experience.
 
 ## OpenTelemetry Instrumentation Details
 
