@@ -53,15 +53,15 @@ func initTracer() (*sdktrace.TracerProvider, error) {
 	res, err := resource.New(
 		context.Background(),
 		resource.WithAttributes(
-			semconv.ServiceName(getEnvOrDefault("OTEL_SERVICE_NAME", "bookapi")),
-			semconv.ServiceVersion(getEnvOrDefault("OTEL_SERVICE_VERSION", "1.0.0")),
-			semconv.DeploymentEnvironment(getEnvOrDefault("OTEL_ENVIRONMENT", "development")),
+			semconv.ServiceName(getEnvOrDefault("OTEL_SERVICE_NAME", "")),
+			semconv.ServiceVersion(getEnvOrDefault("OTEL_SERVICE_VERSION", "")),
+			semconv.DeploymentEnvironment(getEnvOrDefault("OTEL_ENVIRONMENT", "")),
 			// Add Kubernetes namespace so traces appear in the correct namespace in groundcover
-			semconv.K8SNamespaceName(getEnvOrDefault("NAMESPACE", "books")),
+			semconv.K8SNamespaceName(getEnvOrDefault("NAMESPACE", "")),
 			// Add additional Kubernetes metadata for better observability
 			semconv.K8SPodName(getEnvOrDefault("POD_NAME", "")),
-			semconv.K8SContainerName(getEnvOrDefault("CONTAINER_NAME", "bookapi")),
-			semconv.K8SClusterName(getEnvOrDefault("CLUSTER_NAME", "automode-cluster")),
+			semconv.K8SContainerName(getEnvOrDefault("CONTAINER_NAME", "")),
+			semconv.K8SClusterName(getEnvOrDefault("CLUSTER_NAME", "")),
 		),
 	)
 	if err != nil {
