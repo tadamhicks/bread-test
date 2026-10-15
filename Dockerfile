@@ -1,4 +1,8 @@
-FROM --platform=linux/amd64 golang:1.23-alpine AS builder
+# Build natively on the host architecture and cross-compile for the target;
+# running the Go toolchain under amd64 emulation crashes on Apple silicon.
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 # Install build dependencies
 RUN apk add --no-cache git
@@ -6,7 +10,7 @@ RUN apk add --no-cache git
 WORKDIR /app
 
 # Copy go mod and sum files
-COPY go.mod ./
+COPY go.mod go.sum ./
 
 # Download all dependencies
 RUN go mod download
@@ -14,8 +18,8 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the application for AMD64
-RUN GOOS=linux GOARCH=amd64 go build -o main .
+# Build the application for the target platform
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o main .
 
 # Final stage
 FROM --platform=linux/amd64 alpine:3.20.2

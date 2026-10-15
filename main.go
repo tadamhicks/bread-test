@@ -68,11 +68,15 @@ func initTracer() (*sdktrace.TracerProvider, error) {
 		return nil, err
 	}
 
-	// Create tracer provider
+	// Create tracer provider with memory-conscious batch settings
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithBatcher(exporter,
+			sdktrace.WithMaxExportBatchSize(512),     // Limit batch size
+			sdktrace.WithBatchTimeout(5*time.Second), // Export frequently
+			sdktrace.WithMaxQueueSize(2048),          // Limit queue size
+		),
 		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()), // Keep 100% sampling as requested
 	)
 
 	// Set global tracer provider
@@ -165,8 +169,8 @@ func handleGetBooks(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	ctx, scanSpan := tracer.Start(ctx, "scan_books_results")
-	var books []Book
+	_, scanSpan := tracer.Start(ctx, "scan_books_results")
+	books := make([]Book, 0, 100) // Pre-allocate capacity for ~100 books
 	bookCount := 0
 
 	for rows.Next() {
@@ -236,9 +240,10 @@ func handleCreateBook(w http.ResponseWriter, r *http.Request) {
 		attribute.String("db.table", "books"),
 	)
 
-	result, err := db.ExecContext(ctx,
+	// lib/pq does not implement LastInsertId; read the id from RETURNING instead.
+	err := db.QueryRowContext(ctx,
 		"INSERT INTO books (title, author, summary) VALUES ($1, $2, $3) RETURNING id",
-		book.Title, book.Author, book.Summary)
+		book.Title, book.Author, book.Summary).Scan(&book.ID)
 	dbSpan.End()
 
 	if err != nil {
@@ -249,9 +254,6 @@ func handleCreateBook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create book", http.StatusInternalServerError)
 		return
 	}
-
-	id, _ := result.LastInsertId()
-	book.ID = int(id)
 
 	span.SetAttributes(
 		attribute.Int("book.id", book.ID),
@@ -381,7 +383,7 @@ func handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ctx, span := tracer.Start(ctx, "healthCheck")
+	_, span := tracer.Start(ctx, "healthCheck")
 	defer span.End()
 
 	span.SetAttributes(
@@ -411,6 +413,12 @@ func main() {
 		log.Fatalf("Failed to connect to DB: %v", err)
 	}
 	defer db.Close()
+
+	// Configure database connection pool
+	db.SetMaxOpenConns(10)                 // Limit concurrent connections
+	db.SetMaxIdleConns(5)                  // Limit idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Recycle connections
+	db.SetConnMaxIdleTime(1 * time.Minute) // Close idle connections
 
 	// Test database connection
 	if err := db.Ping(); err != nil {
