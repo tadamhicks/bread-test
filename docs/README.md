@@ -203,7 +203,7 @@ kubectl apply -f k8s/otel-collector-config.yaml
 
 ```bash
 kubectl create secret generic otel-collector-secrets \
-  --from-literal=DD_API_KEY=REDACTED_DATADOG_API_KEY \
+  --from-literal=DD_API_KEY=<your-datadog-api-key> \
   --from-literal=DT_API_TOKEN=your_dynatrace_token \
   --from-literal=DT_API_URL=your_dynatrace_url
 ```

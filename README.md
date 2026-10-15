@@ -456,7 +456,7 @@ For direct integration with Groundcover inCloud managed endpoint, configure your
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://experiments.platform-dev.grcv.io"
-export OTEL_EXPORTER_OTLP_HEADERS="apikey=REDACTED_GROUNDCOVER_API_KEY"
+export OTEL_EXPORTER_OTLP_HEADERS="apikey=<your-groundcover-api-key>"
 ```
 
 ## Groundcover Integration
@@ -464,7 +464,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="apikey=REDACTED_GROUNDCOVER_API_KEY"
 This project is configured to send telemetry data directly to Groundcover's inCloud managed endpoint:
 
 - **Endpoint**: `experiments.platform-dev.grcv.io`
-- **Authentication**: API key `REDACTED_GROUNDCOVER_API_KEY`
+- **Authentication**: API key from the `groundcover-apikey` Secret (see `k8s/secrets.yaml`, not committed)
 - **Protocols**: OTLP HTTP/gRPC over TLS
 - **Data Types**: Traces, Logs, and Metrics
 
@@ -585,7 +585,7 @@ open http://localhost:55679/debug/servicez
 
 ## Security Notes
 
-- The API key `REDACTED_GROUNDCOVER_API_KEY` is configured for the experiments environment
+- The API key for the experiments environment is stored in the `groundcover-apikey` Secret
 - For production deployments, use Kubernetes secrets to manage API keys
 - Ensure network policies allow outbound HTTPS traffic to Groundcover endpoints
 
@@ -790,7 +790,7 @@ kubectl apply -f k8s/otel-collector-config.yaml
 
 ```bash
 kubectl create secret generic otel-collector-secrets \
-  --from-literal=DD_API_KEY=REDACTED_DATADOG_API_KEY \
+  --from-literal=DD_API_KEY=<your-datadog-api-key> \
   --from-literal=DT_API_TOKEN=your_dynatrace_token \
   --from-literal=DT_API_URL=your_dynatrace_url
 ```
@@ -832,8 +832,8 @@ This will:
 - Run k6 tests every minute via a CronJob
 - Generate ~100 requests per minute with:
   - 40% GET /books (list all)
-  - 30% POST /books (create new)
-  - 30% PUT /books/{id} (update)
+  - 30% POST /books (create new), then GET /books?id={id}
+  - 30% PUT /books?id={id} (update the book this VU last created)
 
 Monitor the tests:
 
