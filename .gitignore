@@ -1,2 +1,11 @@
 /.DS_Store
-groundcover/
+
+# Vendored Helm chart; re-fetched from https://helm.groundcover.com
+groundcover/charts/
+
+# Local build artifacts
+/main
+/bookapi
+
+# Secret manifests are applied by hand and must never be committed
+k8s/secrets.yaml
