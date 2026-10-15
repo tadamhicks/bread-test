@@ -1,0 +1,44 @@
+# Lab retention: k6 inserts ~0.6 books/s and never deletes, so keep only the
+# newest KEEP_ROWS books. VACUUM lets Postgres reuse the freed space instead
+# of growing the volume.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-retention
+  namespace: books
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: retention
+            image: postgres:18.6
+            command:
+            - sh
+            - -c
+            - |
+              psql -h postgres -U postgres -d bookdb -v ON_ERROR_STOP=1 -v keep="$KEEP_ROWS" <<'SQL'
+              DELETE FROM books
+              WHERE id <= (SELECT max(id) FROM books) - :keep;
+              VACUUM (ANALYZE) books;
+              SELECT count(*) AS rows_remaining,
+                     pg_size_pretty(pg_total_relation_size('books')) AS table_size,
+                     pg_size_pretty(pg_database_size('bookdb')) AS db_size
+              FROM books;
+              SQL
+            env:
+            - name: KEEP_ROWS
+              value: "1000"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres-password
