@@ -1,0 +1,140 @@
+global:
+  env: "testing"
+  backend:
+    enabled: false
+  ingress:
+    site: experiments.platform-dev.grcv.io
+  integrations:
+    agent:
+      enabled: true
+
+journalScraper:
+  serviceNames: ["kubelet", "kernel"]  # List of systemd service units to capture logs from
+  historyDuration: 10m                 # How far back in time to collect logs when discovering new files
+  journalFilter: "system.journal"      # Journal file pattern to match (e.g., "*.journal")
+  includeRemoteJournals: true   
+
+k8sWatcher:
+  watch:
+    crd:
+      enabled: true
+      allowedKinds:
+        # lowercase key — must match the CRD Kind (case-insensitive)
+        cluster:
+          group: "postgresql.cnpg.io"
+          kindPlural: clusters
+          workload:
+            enabled: true
+        application:
+          group: "argoproj.io"          # CRD API group
+          kindPlural: "applications"   # plural resource name from the CRD spec
+          workload:
+            enabled: true  
+agent:
+  sensor:
+    k8sEntitiesWatch:
+      crd:
+        enabled: true
+        allowedKinds:
+          cluster:
+            group: "postgresql.cnpg.io"
+            kindPlural: clusters
+            workload:
+              enabled: true
+          application:
+            group: "argoproj.io"
+            kindPlural: "applications"
+            workload:
+              enabled: true
+    httphandler:
+      obfuscationConfig:
+        keyValueConfig:
+          enabled: true
+          mode: "ObfuscateSpecificValues"
+          caseSensitive: false
+          specificKeys:
+            - "order_id"
+            - "shipping_tracking_id"
+            - "street_address"
+            - "email"
+    apmIngestor:
+      measurements:
+        enabled: true
+      otel:
+        direct:
+          samplingRatio: 1
+    env:
+      - name: FLORA_NETWORKTRACER_JAVASSLTRACER_TRACINGENABLED
+        value: "true"
+    headersForceSampling:
+      w3cForceSample: true
+      b3ForceSample: true
+    customEntityTags:
+      labels:
+        keys: []
+        collectAll: true
+      annotations:
+        keys: []
+        collectAll: true
+    nodelabels: ["kubernetes.io/hostname"]
+
+custom-metrics:
+  enabled: true
+  extraScrapeConfigs:
+    - bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      job_name: kubernetes-nodes-cadvisor
+      scrape_interval: 1m
+      kubernetes_sd_configs:
+        - role: node
+      relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - replacement: kubernetes.default.svc:443
+          target_label: __address__
+        - regex: (.+)
+          replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+          source_labels:
+            - __meta_kubernetes_node_name
+          target_label: __metrics_path__
+      scheme: https
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
+      metric_relabel_configs:
+      - source_labels: [__name__]
+        action: keep
+        regex: '(container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_fs_reads_total|container_fs_writes_total|container_fs_reads_bytes_total|container_fs_writes_bytes_total)'
+
+kube-state-metrics:
+  extraArgs:
+  - --metric-labels-allowlist=pods=[*]
+  collectors:
+    - certificatesigningrequests
+    - configmaps
+    - cronjobs
+    - daemonsets
+    - deployments
+    - endpoints
+    - horizontalpodautoscalers
+    - ingresses
+    - jobs
+    - leases
+    - limitranges
+    - mutatingwebhookconfigurations
+    - namespaces
+    - networkpolicies
+    - nodes
+    - persistentvolumeclaims
+    - persistentvolumes
+    - poddisruptionbudgets
+    - pods
+    - replicasets
+    - replicationcontrollers
+    - resourcequotas
+    - secrets
+    - services
+    - statefulsets
+    - storageclasses
+    - validatingwebhookconfigurations
+    - volumeattachments
+

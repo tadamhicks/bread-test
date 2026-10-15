@@ -1,0 +1,12 @@
+global:
+  groundcover_token:
+  # Using ExternalSecret from AWS Secrets Manager instead of hardcoding
+  groundcoverPredefinedTokenSecret:
+    secretName: groundcover-token
+    secretKey: token
+  backend:
+    enabled: false
+  ingress:
+    site: mc01ib.platform.grcv.io
+env: sandbox1
+clusterId: sbx1-nexus
