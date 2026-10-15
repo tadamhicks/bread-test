@@ -23,13 +23,18 @@ spec:
             - name: K6_OUT
               value: experimental-prometheus-rw
             - name: K6_PROMETHEUS_RW_SERVER_URL
-              value: https://example.platform-dev.grcv.io:443/api/v1/write
+              value: https://experiments.platform-dev.grcv.io:443/api/v1/write
             - name: K6_PROMETHEUS_RW_PUSH_INTERVAL
               value: 1s
             - name: K6_PROMETHEUS_RW_INSECURE_SKIP_TLS_VERIFY
               value: "true"
+            - name: GROUNDCOVER_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: groundcover-apikey
+                  key: apikey
             - name: K6_PROMETHEUS_RW_HTTP_HEADERS
-              value: "apikey:${apikey}"
+              value: "apikey:$(GROUNDCOVER_APIKEY)"
             - name: K6_PROMETHEUS_RW_TREND_STATS
               value: "avg,p(90),p(95),min,max"
             - name: K6_PROMETHEUS_RW_METRIC_PUSH_CONSTANT_LABELS
